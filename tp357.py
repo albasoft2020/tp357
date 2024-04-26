@@ -72,6 +72,15 @@ def bt_setup(address):
     read = bus.get("org.bluez", get_characteristic(uuid_read)[0])
     return device, read, write
 
+def decodeTempHumidity(triplet):
+    return [(triplet[0]+triplet[1]*256)/10, triplet[2]]
+
+def decodeHistoryReply(repl):
+    results = []
+    offset = repl[3]+repl[4]*256
+    for ofs in range(7,offset + 6,3):
+        results.append(decodeTempHumidity(repl[ofs:ofs+3]))
+    return results
 
 def wait_for_temp(read, write):
     raw = []
@@ -90,9 +99,9 @@ def wait_for_temp(read, write):
     mainloop = GLib.MainLoop()
     mainloop.run()
 
-    temp = (raw[3] + raw[4] * 256) / 10
-    humid = raw[5]
-    return [temp], [humid]
+#    temp = (raw[3] + raw[4] * 256) / 10
+#    humid = raw[5]
+    return [decodeTempHumidity(raw[3:6])]
 
 
 def get_temperatures(read, write, mode):
@@ -136,6 +145,7 @@ def get_temperatures(read, write, mode):
     write.WriteValue(cmd_fxd2, {})
 
     cmd2 = b"\xCC\xCC\x01\x09\x00\x00\x00" + binaryDataTime () + b"\x0F\x00" + b"\x00" + b"\x66\x66"
+# Various  version of this command I have snooped from the Android app:
     cmd2 = b"\xCC\xCC\x01\x09\x00\x00\x00\x18\x04\x14\x0E\x13\x25\x0F\x00\x8F\x66\x66"
     cmd2 = b"\xCC\xCC\x01\x09\x00\x00\x00\x18\x04\x14\x0E\x13\x25\x1F\x00\x8F\x66\x66" # Changing the number of points requested stops this working properly!
     cmd2 = b"\xCC\xCC\x01\x09\x00\x00\x00\x18\x04\x14\x0E\x13\x25\x1F\x00\x9F\x66\x66" # Aha, seems to use a simple check sum
@@ -148,10 +158,10 @@ def get_temperatures(read, write, mode):
     mainloop = GLib.MainLoop()
     mainloop.run()
 
-    print(raw)
-
-    temps = []
-    humids = []
+    hist = decodeHistoryReply(raw)
+# original code below. Output format seems to have changed... 
+ #   temps = []
+ #   humids = []
  #   for t in raw:
  #       if t[0] != ord(op_code[0]):
  #           continue
@@ -165,22 +175,22 @@ def get_temperatures(read, write, mode):
  #               continue
  #           temps.append((t[ofs] + t[ofs + 1] * 256) / 10)
  #           humids.append(t[ofs + 2])
-    return temps, humids
+    return hist
 
 
 if __name__ == "__main__":
     device, read, write = bt_setup(sys.argv[1])
 
     if sys.argv[2] == "now":
-        temps, humids = wait_for_temp(read, write)
+        readings = wait_for_temp(read, write)
     else:
-        temps, humids = get_temperatures(read, write, sys.argv[2])
+        readings = get_temperatures(read, write, sys.argv[2])
 #        print(device, read, write)
 
     device.Disconnect()
 
     import csv
     writer = csv.writer(sys.stdout)
-    writer.writerow(["temp", "humid"])
-    for i in range(len(temps)):
-        writer.writerow([temps[i], humids[i]])
+    writer.writerow(["temp","humid"])
+    for i in range(len(readings)):
+        writer.writerow(readings[i])
