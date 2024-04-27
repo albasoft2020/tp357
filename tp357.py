@@ -73,17 +73,28 @@ def bt_setup(address):
     return device, read, write
 
 def decodeTempHumidity(triplet):
-    return [(triplet[0]+triplet[1]*256)/10, triplet[2]]
+    return [int.from_bytes(triplet[0:2], signed=True, byteorder='little')/10, triplet[2]]
 
 def decodeHistoryReply(repl):
     results = []
     offset = repl[3]+repl[4]*256
+    if (len(repl) != offset + 9):
+        print("Response has the wrong length!")
+    if not checkCheckSum(repl):
+        print("Checksum incorrect")
     for ofs in range(7,offset + 6,3):
         results.append(decodeTempHumidity(repl[ofs:ofs+3]))
     return results
 
+def checkCheckSum(response):
+    return sum(response[2:-3])%256 == response[-3]
+
+def appendCheckSum(cmd):
+    return cmd + bytes([sum(cmd)%256])
+
 def wait_for_temp(read, write):
     raw = []
+
 
     def temp_handler(iface, prop_changed, prop_removed):
         if not 'Value' in prop_changed:
@@ -106,6 +117,7 @@ def wait_for_temp(read, write):
 
 def get_temperatures(read, write, mode):
     raw = []
+    rawsize = 0
 
     if mode == "day":
         op_code = [b"\xa7", b"\x7a"]
@@ -122,14 +134,11 @@ def get_temperatures(read, write, mode):
 
         print(prop_changed['Value'])
         if prop_changed['Value'][0] == 194:  #204: #ord(op_code[0]):
-#            raw.append(prop_changed['Value'])
-#        elif raw:
             mainloop.quit()
             return
         else:
             raw.extend(prop_changed['Value'])
-#        mainloop.quit()
-#        return
+            return
 
     read.onPropertiesChanged = temp_handler
     read.StartNotify()
@@ -143,13 +152,14 @@ def get_temperatures(read, write, mode):
 #    write.WriteValue(op_code[0] + b"\x01\x00" + op_code[1], {})
     write.WriteValue(cmd_fxd1, {})
     write.WriteValue(cmd_fxd2, {})
-
-    cmd2 = b"\xCC\xCC\x01\x09\x00\x00\x00" + binaryDataTime () + b"\x0F\x00" + b"\x00" + b"\x66\x66"
+    num = 100
+    cmd_var = b"\x01\x09\x00\x00\x00" + binaryDataTime () + bytes([num%256, num//256]) 
+    cmd2 = b"\xCC\xCC" + appendCheckSum(cmd_var) + b"\x66\x66"
 # Various  version of this command I have snooped from the Android app:
-    cmd2 = b"\xCC\xCC\x01\x09\x00\x00\x00\x18\x04\x14\x0E\x13\x25\x0F\x00\x8F\x66\x66"
-    cmd2 = b"\xCC\xCC\x01\x09\x00\x00\x00\x18\x04\x14\x0E\x13\x25\x1F\x00\x8F\x66\x66" # Changing the number of points requested stops this working properly!
-    cmd2 = b"\xCC\xCC\x01\x09\x00\x00\x00\x18\x04\x14\x0E\x13\x25\x1F\x00\x9F\x66\x66" # Aha, seems to use a simple check sum
-    cmd2 = b"\xCC\xCC\x01\x09\x00\x00\x00\x18\x04\x14\x0E\x04\x27\x77\x00\xea\x66\x66"
+#    cmd2 = b"\xCC\xCC\x01\x09\x00\x00\x00\x18\x04\x14\x0E\x13\x25\x0F\x00\x8F\x66\x66"
+#    cmd2 = b"\xCC\xCC\x01\x09\x00\x00\x00\x18\x04\x14\x0E\x13\x25\x1F\x00\x8F\x66\x66" # Changing the number of points requested stops this working properly!
+#    cmd2 = b"\xCC\xCC\x01\x09\x00\x00\x00\x18\x04\x14\x0E\x13\x25\x1F\x00\x9F\x66\x66" # Aha, seems to use a simple check sum
+#    cmd2 = b"\xCC\xCC\x01\x09\x00\x00\x00\x18\x04\x14\x0E\x04\x27\x77\x00\xea\x66\x66"
 #    cmd2 = b"\xCC\xCC\x01\x09\x00\x00\x00\x18\x04\x14\x0E\x13\x25\x0F\x00\x8F\x66\x66"
     write.WriteValue(cmd2, {})
     print("Written command string: ")
@@ -159,6 +169,7 @@ def get_temperatures(read, write, mode):
     mainloop.run()
 
     hist = decodeHistoryReply(raw)
+
 # original code below. Output format seems to have changed... 
  #   temps = []
  #   humids = []
@@ -185,7 +196,6 @@ if __name__ == "__main__":
         readings = wait_for_temp(read, write)
     else:
         readings = get_temperatures(read, write, sys.argv[2])
-#        print(device, read, write)
 
     device.Disconnect()
 
