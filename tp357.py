@@ -118,6 +118,7 @@ def wait_for_temp(read, write):
 def get_temperatures(read, write, mode):
     raw = []
     rawsize = 0
+    responseExpectedSize = 0
 
     if mode == "day":
         op_code = [b"\xa7", b"\x7a"]
@@ -129,15 +130,22 @@ def get_temperatures(read, write, mode):
         raise RuntimeError(f"Unknown mode: {mode}")
 
     def temp_handler(iface, prop_changed, prop_removed):
+        nonlocal responseExpectedSize
+
         if not 'Value' in prop_changed:
             return
-
-        print(prop_changed['Value'])
+#        print(prop_changed['Value'])
+        if (responseExpectedSize == 0) and (prop_changed['Value'][0:2] == [204,204]):
+            responseExpectedSize = int.from_bytes(prop_changed['Value'][3:5], byteorder='little') + 9 
+            print("Expected response size", responseExpectedSize)
         if prop_changed['Value'][0] == 194:  #204: #ord(op_code[0]):
             mainloop.quit()
             return
         else:
             raw.extend(prop_changed['Value'])
+            print(len(raw), " / ", responseExpectedSize)
+            if (len(raw) >= responseExpectedSize):
+                mainloop.quit()
             return
 
     read.onPropertiesChanged = temp_handler
@@ -152,7 +160,7 @@ def get_temperatures(read, write, mode):
 #    write.WriteValue(op_code[0] + b"\x01\x00" + op_code[1], {})
     write.WriteValue(cmd_fxd1, {})
     write.WriteValue(cmd_fxd2, {})
-    num = 100
+    num = 200
     cmd_var = b"\x01\x09\x00\x00\x00" + binaryDataTime () + bytes([num%256, num//256]) 
     cmd2 = b"\xCC\xCC" + appendCheckSum(cmd_var) + b"\x66\x66"
 # Various  version of this command I have snooped from the Android app:
@@ -167,6 +175,8 @@ def get_temperatures(read, write, mode):
 
     mainloop = GLib.MainLoop()
     mainloop.run()
+    
+#    print(raw)
 
     hist = decodeHistoryReply(raw)
 
