@@ -12,9 +12,11 @@ import pydbus
 def binaryDataTime (week = False):
     dt_now = datetime.datetime.now();
     bs = bytes([dt_now.year%100,dt_now.month,dt_now.day,dt_now.hour,dt_now.minute,dt_now.second])
+#    dt_str = dt_now.strftime('%y%m%d-%H%M%S')+'('+ str(int(dt_now.timestamp()))+')'
+    dt_str = str(int(dt_now.timestamp()))
     if week:
         bs += bytes([dt_now.isoweekday()])
-    return bs
+    return bs, dt_str
 
 
 def get_device(bus, address):
@@ -77,9 +79,11 @@ def decodeTempHumidity(triplet):
 
 def decodeHistoryReply(repl):
     results = []
-    offset = repl[3]+repl[4]*256
+    offset = int.from_bytes(repl[3:7], byteorder='little') 
     if (len(repl) != offset + 9):
         print("Response has the wrong length!")
+        offset = len(repl) - 6
+        print(repl)
     if not checkCheckSum(repl):
         print("Checksum incorrect")
     for ofs in range(7,offset + 6,3):
@@ -115,19 +119,19 @@ def wait_for_temp(read, write):
     return [decodeTempHumidity(raw[3:6])]
 
 
-def get_temperatures(read, write, mode):
+def get_temperatures(read, write, num):
     raw = []
     rawsize = 0
     responseExpectedSize = 0
 
-    if mode == "day":
-        op_code = [b"\xa7", b"\x7a"]
-    elif mode == "week":
-        op_code = [b"\xa6", b"\x6a"]
-    elif mode == "year":
-        op_code = [b"\xa8", b"\x8a"]
-    else:
-        raise RuntimeError(f"Unknown mode: {mode}")
+#    if mode == "day":
+#        op_code = [b"\xa7", b"\x7a"]
+#    elif mode == "week":
+#        op_code = [b"\xa6", b"\x6a"]
+#    elif mode == "year":
+#        op_code = [b"\xa8", b"\x8a"]
+#    else:
+#        raise RuntimeError(f"Unknown mode: {mode}")
 
     def temp_handler(iface, prop_changed, prop_removed):
         nonlocal responseExpectedSize
@@ -136,9 +140,12 @@ def get_temperatures(read, write, mode):
             return
 #        print(prop_changed['Value'])
         if (responseExpectedSize == 0) and (prop_changed['Value'][0:2] == [204,204]):
-            responseExpectedSize = int.from_bytes(prop_changed['Value'][3:5], byteorder='little') + 9 
+            responseExpectedSize = int.from_bytes(prop_changed['Value'][3:7], byteorder='little') + 9 
             print("Expected response size", responseExpectedSize)
-        if prop_changed['Value'][0] == 194:  #204: #ord(op_code[0]):
+#        if prop_changed['Value'][0] == 194:  #204: #ord(op_code[0]):
+        if len(prop_changed['Value']) == 7:  #204: #ord(op_code[0]):
+            print(prop_changed['Value'])
+#            if (len(raw) > 0.8 * responseExpectedSize):
             mainloop.quit()
             return
         else:
@@ -160,8 +167,12 @@ def get_temperatures(read, write, mode):
 #    write.WriteValue(op_code[0] + b"\x01\x00" + op_code[1], {})
     write.WriteValue(cmd_fxd1, {})
     write.WriteValue(cmd_fxd2, {})
-    num = 200
-    cmd_var = b"\x01\x09\x00\x00\x00" + binaryDataTime () + bytes([num%256, num//256]) 
+ #   num = 200
+ #   num = 28800  # 0x7080, maximum??
+ #   num = 11000
+    num = min(num, 28800)
+    bs, dt_str = binaryDataTime () 
+    cmd_var = b"\x01\x09\x00\x00\x00" + bs + bytes([num%256, num//256]) 
     cmd2 = b"\xCC\xCC" + appendCheckSum(cmd_var) + b"\x66\x66"
 # Various  version of this command I have snooped from the Android app:
 #    cmd2 = b"\xCC\xCC\x01\x09\x00\x00\x00\x18\x04\x14\x0E\x13\x25\x0F\x00\x8F\x66\x66"
@@ -196,21 +207,30 @@ def get_temperatures(read, write, mode):
  #               continue
  #           temps.append((t[ofs] + t[ofs + 1] * 256) / 10)
  #           humids.append(t[ofs + 2])
-    return hist
+    return hist, dt_str
 
 
 if __name__ == "__main__":
-    device, read, write = bt_setup(sys.argv[1])
+    address = sys.argv[1]
+    device, read, write = bt_setup(address)
 
     if sys.argv[2] == "now":
         readings = wait_for_temp(read, write)
     else:
-        readings = get_temperatures(read, write, sys.argv[2])
+        num = 100
+        if  sys.argv[2].isdigit():
+            num = int(sys.argv[2])
+        readings, dt_str = get_temperatures(read, write, num)
 
     device.Disconnect()
 
     import csv
-    writer = csv.writer(sys.stdout)
+#    writer = csv.writer(sys.stdout)
+    
+    fn = address.replace(":", "-") + "_" + dt_str + ".csv"
+    file1 = open(fn, 'w')
+    writer = csv.writer(file1)
     writer.writerow(["temp","humid"])
     for i in range(len(readings)):
         writer.writerow(readings[i])
+    file1.close()
