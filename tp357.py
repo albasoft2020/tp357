@@ -170,8 +170,11 @@ def get_temperatures(read, write, num):
  #   num = 200
  #   num = 28800  # 0x7080, maximum??
  #   num = 11000
-    num = min(num, 28800)
     bs, dt_str = binaryDataTime () 
+    if num < 0:
+        num = (int(dt_str)+num)//60
+    num = min(num, 28800)
+    print(num)
     cmd_var = b"\x01\x09\x00\x00\x00" + bs + bytes([num%256, num//256]) 
     cmd2 = b"\xCC\xCC" + appendCheckSum(cmd_var) + b"\x66\x66"
 # Various  version of this command I have snooped from the Android app:
@@ -216,10 +219,17 @@ if __name__ == "__main__":
 
     if sys.argv[2] == "now":
         readings = wait_for_temp(read, write)
+    elif sys.argv[2] == "hist":
+        num = 28800
+        if  sys.argv[3].isdigit():
+            num = int(sys.argv[3])
+        readings, dt_str = get_temperatures(read, write, num)
+    elif sys.argv[2] == "log":
+        if  sys.argv[3].isdigit():
+            num = -int(sys.argv[3])
+        readings, dt_str = get_temperatures(read, write, num)
     else:
-        num = 100
-        if  sys.argv[2].isdigit():
-            num = int(sys.argv[2])
+        num = 28800
         readings, dt_str = get_temperatures(read, write, num)
 
     device.Disconnect()
