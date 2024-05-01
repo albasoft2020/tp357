@@ -9,6 +9,9 @@ from gi.repository import GLib
 import pydbus
 
 
+verbose = True
+MAX_NUM = 28800
+
 def binaryDataTime (week = False):
     dt_now = datetime.datetime.now();
     bs = bytes([dt_now.year%100,dt_now.month,dt_now.day,dt_now.hour,dt_now.minute,dt_now.second])
@@ -157,7 +160,8 @@ def get_temperatures(read, write, num):
 
     read.onPropertiesChanged = temp_handler
     read.StartNotify()
-    print("Starting request of history")
+    if verbose:
+        print("Starting request of history")
 
     write.AcquireWrite({})
     
@@ -174,10 +178,10 @@ def get_temperatures(read, write, num):
     if num < 0:
         num = (int(dt_str)+num)//60
     num = min(num, 28800)
-    print(num)
+    print("Current timestamp: ", dt_str, ", number of points requested: ", num)
     cmd_var = b"\x01\x09\x00\x00\x00" + bs + bytes([num%256, num//256]) 
     cmd2 = b"\xCC\xCC" + appendCheckSum(cmd_var) + b"\x66\x66"
-# Various  version of this command I have snooped from the Android app:
+# Various  versions of this command I have snooped from the Android app:
 #    cmd2 = b"\xCC\xCC\x01\x09\x00\x00\x00\x18\x04\x14\x0E\x13\x25\x0F\x00\x8F\x66\x66"
 #    cmd2 = b"\xCC\xCC\x01\x09\x00\x00\x00\x18\x04\x14\x0E\x13\x25\x1F\x00\x8F\x66\x66" # Changing the number of points requested stops this working properly!
 #    cmd2 = b"\xCC\xCC\x01\x09\x00\x00\x00\x18\x04\x14\x0E\x13\x25\x1F\x00\x9F\x66\x66" # Aha, seems to use a simple check sum
@@ -215,8 +219,11 @@ def get_temperatures(read, write, num):
 
 if __name__ == "__main__":
     address = sys.argv[1]
+    if verbose:
+        print("Connecting to ", address)
     device, read, write = bt_setup(address)
-
+    if verbose:
+        print("Connected!");
     if sys.argv[2] == "now":
         readings = wait_for_temp(read, write)
     elif sys.argv[2] == "hist":
