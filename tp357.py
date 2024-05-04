@@ -191,7 +191,7 @@ def get_temperatures(read, write, num):
         String containing the unix time stamp for the reading
     '''
     raw = []
-   responseExpectedSize = 0
+    responseExpectedSize = 0
 
 #    if mode == "day":
 #        op_code = [b"\xa7", b"\x7a"]
@@ -255,7 +255,7 @@ def get_temperatures(read, write, num):
     write.WriteValue(cmd2, {})
     if verbose:
         print("Written command string: ")
-        print(cmd2)
+        print(" ".join(hex(n) for n in cmd2))
 
     mainloop = GLib.MainLoop()
     mainloop.run()
