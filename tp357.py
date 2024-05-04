@@ -12,14 +12,29 @@ import pydbus
 verbose = True
 MAX_NUM = 28800
 
-def binaryDataTime (week = False):
+def byteStringDateTime (week = False):
+    '''
+    Get current date and time in the required format for requests to sensor
+
+    Parameters
+    ----------
+    week : TYPE, optional
+        If True it also returns a code for the weekday as needed for some commands. The default is False.
+
+    Returns
+    -------
+    bs : bytestring
+        Bytestring encoding the current date time.
+    ts : string
+        String containing the corresponding unix time stamp.
+    '''
     dt_now = datetime.datetime.now();
     bs = bytes([dt_now.year%100,dt_now.month,dt_now.day,dt_now.hour,dt_now.minute,dt_now.second])
-#    dt_str = dt_now.strftime('%y%m%d-%H%M%S')+'('+ str(int(dt_now.timestamp()))+')'
-    dt_str = str(int(dt_now.timestamp()))
+#    ts = dt_now.strftime('%y%m%d-%H%M%S')+'('+ str(int(dt_now.timestamp()))+')'
+    ts = str(int(dt_now.timestamp()))
     if week:
         bs += bytes([dt_now.isoweekday()])
-    return bs, dt_str
+    return bs, ts
 
 
 def get_device(bus, address):
@@ -77,8 +92,24 @@ def bt_setup(address):
     read = bus.get("org.bluez", get_characteristic(uuid_read)[0])
     return device, read, write
 
+
 def decodeTempHumidity(triplet):
+    '''
+    Convert triplet of bytes as returned by sensor into temperature and humidity values.
+
+    Parameters
+    ----------
+    triplet : bytestring
+        Triplet of bytes as returned by sensor. The first 2 bytes encode the temperature as a little endian int16, the final byte is the humidity.
+
+    Returns
+    -------
+    list
+        First value is temprature in deg C, 2nd humidity in percent.
+
+    '''
     return [int.from_bytes(triplet[0:2], signed=True, byteorder='little')/10, triplet[2]]
+
 
 def decodeHistoryReply(repl):
     results = []
@@ -94,14 +125,30 @@ def decodeHistoryReply(repl):
     return results
 
 def checkCheckSum(response):
+    '''
+    Check that the simple checksum of data agrees with the transmitted checksum.
+
+    Parameters
+    ----------
+    response : bytestring
+        Array of bytes for which to calculate the checksum
+
+    Returns
+    -------
+    boolean
+        Does the data satisfy the checksum value.
+
+    '''
     return sum(response[2:-3])%256 == response[-3]
+
 
 def appendCheckSum(cmd):
     return cmd + bytes([sum(cmd)%256])
 
-def wait_for_temp(read, write):
-    raw = []
 
+def wait_for_temp(read, write):
+
+    raw = []
 
     def temp_handler(iface, prop_changed, prop_removed):
         if not 'Value' in prop_changed:
@@ -117,15 +164,34 @@ def wait_for_temp(read, write):
     mainloop = GLib.MainLoop()
     mainloop.run()
 
-#    temp = (raw[3] + raw[4] * 256) / 10
-#    humid = raw[5]
     return [decodeTempHumidity(raw[3:6])]
 
 
 def get_temperatures(read, write, num):
+    '''
+    Get temperature history from the sensor.
+
+    Parameters
+    ----------
+    read : TYPE
+        DESCRIPTION.
+    write : TYPE
+        DESCRIPTION.
+    num : int
+        Number of timepoints requested, or if a negative number is supplied it 
+        is interpreted as the time stamp of the last download and the number of 
+        datapoints is automatically determined as the number of minutes passed
+        since then.
+
+    Returns
+    -------
+    hist : List of pairs 
+        List of (temperature, humidity) values for the requested timepoints (latest first).
+    ts_str : string
+        String containing the unix time stamp for the reading
+    '''
     raw = []
-    rawsize = 0
-    responseExpectedSize = 0
+   responseExpectedSize = 0
 
 #    if mode == "day":
 #        op_code = [b"\xa7", b"\x7a"]
@@ -146,9 +212,10 @@ def get_temperatures(read, write, num):
             responseExpectedSize = int.from_bytes(prop_changed['Value'][3:7], byteorder='little') + 9 
             print("Expected response size", responseExpectedSize)
 #        if prop_changed['Value'][0] == 194:  #204: #ord(op_code[0]):
-        if len(prop_changed['Value']) == 7:  #204: #ord(op_code[0]):
+        if len(prop_changed['Value']) == 7:
+            # If we receive a 'standard response' quit the loop. 
+            # Should not really happen any more...?
             print(prop_changed['Value'])
-#            if (len(raw) > 0.8 * responseExpectedSize):
             mainloop.quit()
             return
         else:
@@ -164,21 +231,19 @@ def get_temperatures(read, write, num):
         print("Starting request of history")
 
     write.AcquireWrite({})
-    
+    # I currently have no idea what these 2 commands are doing. Are they actually needed?    
     cmd_fxd1 = b"\xCC\xCC\x02\x01\x00\x00\x01\x04\x66\x66"
     cmd_fxd2 = b"\xCC\xCC\x04\x00\x00\x00\x04\x66\x66"
-    
-#    write.WriteValue(op_code[0] + b"\x01\x00" + op_code[1], {})
     write.WriteValue(cmd_fxd1, {})
     write.WriteValue(cmd_fxd2, {})
- #   num = 200
- #   num = 28800  # 0x7080, maximum??
- #   num = 11000
-    bs, dt_str = binaryDataTime () 
+
+    bs, ts_str = byteStringDateTime () 
     if num < 0:
-        num = (int(dt_str)+num)//60
-    num = min(num, 28800)
-    print("Current timestamp: ", dt_str, ", number of points requested: ", num)
+        num = (int(ts_str)+num)//60
+    # 28800 seems to be the maximum number of readings we can request:
+    num = min(num, MAX_NUM)
+    if verbose:
+        print("Current timestamp: ", ts_str, ", number of points requested: ", num)
     cmd_var = b"\x01\x09\x00\x00\x00" + bs + bytes([num%256, num//256]) 
     cmd2 = b"\xCC\xCC" + appendCheckSum(cmd_var) + b"\x66\x66"
 # Various  versions of this command I have snooped from the Android app:
@@ -188,8 +253,9 @@ def get_temperatures(read, write, num):
 #    cmd2 = b"\xCC\xCC\x01\x09\x00\x00\x00\x18\x04\x14\x0E\x04\x27\x77\x00\xea\x66\x66"
 #    cmd2 = b"\xCC\xCC\x01\x09\x00\x00\x00\x18\x04\x14\x0E\x13\x25\x0F\x00\x8F\x66\x66"
     write.WriteValue(cmd2, {})
-    print("Written command string: ")
-    print(cmd2)
+    if verbose:
+        print("Written command string: ")
+        print(cmd2)
 
     mainloop = GLib.MainLoop()
     mainloop.run()
@@ -214,7 +280,7 @@ def get_temperatures(read, write, num):
  #               continue
  #           temps.append((t[ofs] + t[ofs + 1] * 256) / 10)
  #           humids.append(t[ofs + 2])
-    return hist, dt_str
+    return hist, ts_str
 
 
 if __name__ == "__main__":
@@ -230,21 +296,21 @@ if __name__ == "__main__":
         num = 28800
         if  sys.argv[3].isdigit():
             num = int(sys.argv[3])
-        readings, dt_str = get_temperatures(read, write, num)
+        readings, ts_str = get_temperatures(read, write, num)
     elif sys.argv[2] == "log":
         if  sys.argv[3].isdigit():
             num = -int(sys.argv[3])
-        readings, dt_str = get_temperatures(read, write, num)
+        readings, ts_str = get_temperatures(read, write, num)
     else:
-        num = 28800
-        readings, dt_str = get_temperatures(read, write, num)
+        num = MAX_NUM
+        readings, ts_str = get_temperatures(read, write, num)
 
     device.Disconnect()
 
     import csv
 #    writer = csv.writer(sys.stdout)
     
-    fn = address.replace(":", "-") + "_" + dt_str + ".csv"
+    fn = address.replace(":", "-") + "_" + ts_str + ".csv"
     file1 = open(fn, 'w')
     writer = csv.writer(file1)
     writer.writerow(["temp","humid"])
