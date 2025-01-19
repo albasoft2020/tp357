@@ -284,26 +284,34 @@ def get_temperatures(read, write, num):
 
 
 if __name__ == "__main__":
+    args = len(sys.argv) - 1 # Number of arguments provided
+#    print(args)
+    if args == 0:
+        print("Need address of device as the first argument")
+        exit()
     address = sys.argv[1]
     if verbose:
         print("Connecting to ", address)
     device, read, write = bt_setup(address)
     if verbose:
         print("Connected!");
-    if sys.argv[2] == "now":
+    num = MAX_NUM
+    if args == 1:
+        readings, ts_str = get_temperatures(read, write, num)        
+    elif sys.argv[2] == "now":
         readings = wait_for_temp(read, write)
+        print("Current reading: T =", readings[0][0], "C, H =", readings[0][1], "%")
+        device.Disconnect()
+        exit()
     elif sys.argv[2] == "hist":
-        num = 28800
-        if  sys.argv[3].isdigit():
+        if (args == 3) and sys.argv[3].isdigit():
             num = int(sys.argv[3])
         readings, ts_str = get_temperatures(read, write, num)
     elif sys.argv[2] == "log":
-        if  sys.argv[3].isdigit():
+        if (args == 3) and sys.argv[3].isdigit():
             num = -int(sys.argv[3])
         readings, ts_str = get_temperatures(read, write, num)
-    else:
-        num = MAX_NUM
-        readings, ts_str = get_temperatures(read, write, num)
+#    else:
 
     device.Disconnect()
 
