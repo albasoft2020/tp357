@@ -26,7 +26,7 @@ def byteStringDateTime (week = False):
     bs : bytestring
         Bytestring encoding the current date time.
     ts : integer
-        String containing the corresponding unix time stamp.
+        Unix time stamp.
     '''
     dt_now = datetime.datetime.now();
     bs = bytes([dt_now.year%100,dt_now.month,dt_now.day,dt_now.hour,dt_now.minute,dt_now.second])
@@ -187,8 +187,8 @@ def get_temperatures(read, write, num):
     -------
     hist : List of pairs 
         List of (temperature, humidity) values for the requested timepoints (latest first).
-    ts_str : string
-        String containing the unix time stamp for the reading
+    ts : integer
+        unix time stamp for the reading 
     '''
     raw = []
     responseExpectedSize = 0
@@ -238,6 +238,8 @@ def get_temperatures(read, write, num):
     write.WriteValue(cmd_fxd2, {})
 
     bs, ts = byteStringDateTime () 
+    # Adjust timestamp to last full minute
+    ts -= ts%60 
     if num < 0:
         num = (ts + num)//60
     # 28800 seems to be the maximum number of readings we can request:
@@ -296,6 +298,7 @@ if __name__ == "__main__":
     if verbose:
         print("Connected!");
     num = MAX_NUM
+    mode = "hist"
     if args == 1:
         readings, ts = get_temperatures(read, write, num)        
     elif sys.argv[2] == "now":
@@ -308,6 +311,7 @@ if __name__ == "__main__":
             num = int(sys.argv[3])
         readings, ts = get_temperatures(read, write, num)
     elif sys.argv[2] == "log":
+        mode = "log"
         if (args == 3) and sys.argv[3].isdigit():
             num = -int(sys.argv[3])
         readings, ts = get_temperatures(read, write, num)
@@ -317,12 +321,17 @@ if __name__ == "__main__":
 
     import csv
 #    writer = csv.writer(sys.stdout)
-    # Adjust timestamp to last full minute
-    ts -= ts%60 
-    fn = address.replace(":", "-") + "_" + str(ts) + ".csv"
+    tstart = ts - 60*(len(readings) - 1)
+    fn = address.replace(":", "-") + "_" + str(tstart) + "-" + str(ts) + ".csv"
+    if mode == "log":
+        flog = address.replace(":", "-") + ".log"
+        with open(flog, "w") as logfile:
+            logfile.write(str(ts))
     file1 = open(fn, 'w')
     writer = csv.writer(file1)
-    writer.writerow(["temp","humid"])
+    writer.writerow(["timestamp", "temp","humid"])
     for res in reversed(readings):
-        writer.writerow(res)
+        row = [tstart] + res
+        writer.writerow(row)
+        tstart += 60
     file1.close()
