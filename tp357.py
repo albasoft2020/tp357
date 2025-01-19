@@ -25,13 +25,13 @@ def byteStringDateTime (week = False):
     -------
     bs : bytestring
         Bytestring encoding the current date time.
-    ts : string
+    ts : integer
         String containing the corresponding unix time stamp.
     '''
     dt_now = datetime.datetime.now();
     bs = bytes([dt_now.year%100,dt_now.month,dt_now.day,dt_now.hour,dt_now.minute,dt_now.second])
 #    ts = dt_now.strftime('%y%m%d-%H%M%S')+'('+ str(int(dt_now.timestamp()))+')'
-    ts = str(int(dt_now.timestamp()))
+    ts = int(dt_now.timestamp())
     if week:
         bs += bytes([dt_now.isoweekday()])
     return bs, ts
@@ -237,13 +237,13 @@ def get_temperatures(read, write, num):
     write.WriteValue(cmd_fxd1, {})
     write.WriteValue(cmd_fxd2, {})
 
-    bs, ts_str = byteStringDateTime () 
+    bs, ts = byteStringDateTime () 
     if num < 0:
-        num = (int(ts_str)+num)//60
+        num = (ts + num)//60
     # 28800 seems to be the maximum number of readings we can request:
     num = min(num, MAX_NUM)
     if verbose:
-        print("Current timestamp: ", ts_str, ", number of points requested: ", num)
+        print("Current timestamp: ", ts, ", number of points requested: ", num)
     cmd_var = b"\x01\x09\x00\x00\x00" + bs + bytes([num%256, num//256]) 
     cmd2 = b"\xCC\xCC" + appendCheckSum(cmd_var) + b"\x66\x66"
 # Various  versions of this command I have snooped from the Android app:
@@ -280,7 +280,7 @@ def get_temperatures(read, write, num):
  #               continue
  #           temps.append((t[ofs] + t[ofs + 1] * 256) / 10)
  #           humids.append(t[ofs + 2])
-    return hist, ts_str
+    return hist, ts
 
 
 if __name__ == "__main__":
@@ -297,7 +297,7 @@ if __name__ == "__main__":
         print("Connected!");
     num = MAX_NUM
     if args == 1:
-        readings, ts_str = get_temperatures(read, write, num)        
+        readings, ts = get_temperatures(read, write, num)        
     elif sys.argv[2] == "now":
         readings = wait_for_temp(read, write)
         print("Current reading: T =", readings[0][0], "C, H =", readings[0][1], "%")
@@ -306,22 +306,23 @@ if __name__ == "__main__":
     elif sys.argv[2] == "hist":
         if (args == 3) and sys.argv[3].isdigit():
             num = int(sys.argv[3])
-        readings, ts_str = get_temperatures(read, write, num)
+        readings, ts = get_temperatures(read, write, num)
     elif sys.argv[2] == "log":
         if (args == 3) and sys.argv[3].isdigit():
             num = -int(sys.argv[3])
-        readings, ts_str = get_temperatures(read, write, num)
+        readings, ts = get_temperatures(read, write, num)
 #    else:
 
     device.Disconnect()
 
     import csv
 #    writer = csv.writer(sys.stdout)
-    
-    fn = address.replace(":", "-") + "_" + ts_str + ".csv"
+    # Adjust timestamp to last full minute
+    ts -= ts%60 
+    fn = address.replace(":", "-") + "_" + str(ts) + ".csv"
     file1 = open(fn, 'w')
     writer = csv.writer(file1)
     writer.writerow(["temp","humid"])
-    for i in range(len(readings)):
-        writer.writerow(readings[i])
+    for res in reversed(readings):
+        writer.writerow(res)
     file1.close()
