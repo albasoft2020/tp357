@@ -312,8 +312,17 @@ if __name__ == "__main__":
         readings, ts = get_temperatures(read, write, num)
     elif sys.argv[2] == "log":
         mode = "log"
+        flog = address.replace(":", "-") + ".log"
         if (args == 3) and sys.argv[3].isdigit():
             num = -int(sys.argv[3])
+        else:
+            try:
+                with open(flog, "r") as fl:
+                    ts_log = fl.read()
+                    if ts_log.isdigit():
+                        num = -int(ts_log)
+            except FileNotFoundError:
+                print("No log file found for this device")
         readings, ts = get_temperatures(read, write, num)
 #    else:
 
@@ -323,8 +332,7 @@ if __name__ == "__main__":
 #    writer = csv.writer(sys.stdout)
     tstart = ts - 60*(len(readings) - 1)
     fn = address.replace(":", "-") + "_" + str(tstart) + "-" + str(ts) + ".csv"
-    if mode == "log":
-        flog = address.replace(":", "-") + ".log"
+    if mode == "log":        
         with open(flog, "w") as logfile:
             logfile.write(str(ts))
     file1 = open(fn, 'w')
