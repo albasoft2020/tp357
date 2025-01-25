@@ -323,10 +323,12 @@ if __name__ == "__main__":
     args = len(sys.argv) - 1 # Number of arguments provided
 #    print(args)
 
-    # Open and read the JSON file
-    with open('.tp357s.json', 'r') as file:
-        confData = json.load(file)
-
+    # Open config JSON file
+    try:
+        with open('.tp357s.json', 'r') as file:
+            confData = json.load(file)
+    except FileNotFoundError:
+        confData = {}
     # Print the data
     # print(confData)
 

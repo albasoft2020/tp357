@@ -1,0 +1,13 @@
+{
+    "E5:B5:C0:3D:12:E7":
+    { 
+        "name" : "Livingroom",
+        "model" : "TP357S",
+        "battery" : 100,
+        "lastSeen" : 0,
+        "logData" : true,
+        "logDirectory" : ".",
+        "logLastTimeStamp" : 0
+    }
+}
+        
