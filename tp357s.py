@@ -8,6 +8,7 @@ import datetime
 from gi.repository import GLib
 import pydbus
 
+import json
 
 verbose = True
 MAX_NUM = 28800
@@ -59,6 +60,39 @@ def get_device(bus, address):
             sys.exit(1)
         adapter.StopDiscovery()
         return device
+
+def scan_devices():
+    from time import sleep
+    print("Scanning for TP357S devices")
+    bus = pydbus.SystemBus()
+    mngr = bus.get('org.bluez', '/')
+    adapter = bus.get("org.bluez", "/org/bluez/hci0")
+    adapter.StartDiscovery()
+    N_TRIES = 1
+    N_TRY_LENGTH = 5
+    for i in range(N_TRIES):
+        sleep(N_TRY_LENGTH)
+        mng_objs = mngr.GetManagedObjects()
+        for path in mng_objs:
+            # print(type(mng_objs[path]))
+            dev = mng_objs[path].get('org.bluez.Device1', {})
+            devName = dev.get("Name", "")
+            # print(dev.get("Address"), devName)
+            if devName.startswith("TP357"):
+                # print(dev)
+                addr = dev.get("Address")
+                if addr in confData.keys():
+                    print(confData[addr]['name'])
+                else:
+                    print(dev.get("Address"), devName)
+                data = dev.get("ManufacturerData", {})
+                print("\t", data)
+                key = [*data][0] # get value of (1st) key 
+                temp = (key//256 + data[key][0])/10
+                hum = data[key][1]
+                print("\t Reading: ", temp, "C, ", hum, "%")
+    adapter.StopDiscovery()
+    return
 
 
 def bt_setup(address):
@@ -288,8 +322,17 @@ def get_temperatures(read, write, num):
 if __name__ == "__main__":
     args = len(sys.argv) - 1 # Number of arguments provided
 #    print(args)
+
+    # Open and read the JSON file
+    with open('.tp357s.json', 'r') as file:
+        confData = json.load(file)
+
+    # Print the data
+    # print(confData)
+
     if args == 0:
-        print("Need address of device as the first argument")
+        # print("Need address of device as the first argument")
+        scan_devices()
         exit()
     address = sys.argv[1]
     if verbose:
